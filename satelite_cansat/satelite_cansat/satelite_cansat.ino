@@ -1,3 +1,4 @@
+#include "heltec.h"
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
@@ -6,12 +7,14 @@
 #define PIN_SDA 19  // Cambia este número por tu pin de datos (ej. 21 en ESP32, 4 en ESP8266)
 #define PIN_SCL 20  // Cambia este número por tu pin de reloj (ej. 22 en ESP32, 5 en ESP8266)
 
+#define BAND 868E6
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define t_ciclo 1000
 
 Adafruit_BME280 bme; 
 
 void setup() {
+    //Heltec.begin(false, true, true, true, BAND); //Necesario para radio, al descomentarlo da error Monitor Serie**
     Serial.begin(9600);
     while(!Serial); 
     Serial.println("Comunicación serie establecida");
@@ -48,6 +51,18 @@ void loop() {
     Serial.print(bme.readHumidity());
     Serial.println(" %");
     Serial.println("-----------------------");
+
+
+    /*Enviar mensaje por radio
+    // 2. Formatear mensaje (formato compacto para radio)
+    String mensaje = "T:" + String(t, 1) + " H:" + String(h, 0) + " P:" + String(p, 0);
+
+    // 3. Enviar por LoRa
+    LoRa.beginPacket();
+    LoRa.print(mensaje);
+    LoRa.endPacket();
+    */ 
+
 
     delay(t_ciclo);  //Cambiar por  if (millis() - tiempoAnterior >= intervalo) {
     // Guarda el tiempo actual como el nuevo tiempo de inicio
