@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#include <RadioLib.h>
 
 // --- CONFIGURACIÓN DE PINES I2C ---
 #define PIN_SDA 19  // Cambia este número por tu pin de datos (ej. 21 en ESP32, 4 en ESP8266)
@@ -11,10 +12,14 @@
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define t_ciclo 1000
 
+// Definición de pines para Heltec V3
+// NSS: 8, DIO1: 14, NRST: 12, BUSY: 13
+SX1262 radio = new Module(8, 14, 12, 13);
+
 Adafruit_BME280 bme; 
 
 void setup() {
-    //Heltec.begin(false, true, true, true, BAND); //Necesario para radio, al descomentarlo da error Monitor Serie**
+   // Heltec.begin(true, true, true, true, BAND); //Necesario para radio, al descomentarlo da error Monitor Serie**
     Serial.begin(9600);
     while(!Serial); 
     Serial.println("Comunicación serie establecida");
