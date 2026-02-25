@@ -3,6 +3,8 @@
 #include <Adafruit_BME280.h>
 #include <RadioLib.h>
 #include <heltec_unofficial.h>
+#include <SPI.h>
+#include <LoRa.h>
 // --- CONFIGURACIÓN DE PINES I2C ---
 #define PIN_SDA 19
 #define PIN_SCL 20
@@ -47,6 +49,7 @@ void setup() {
   tiempoAnterior = millis();
 }
 void loop() {
+  //Leer datos BME
   float t = bme.readTemperature();
   Serial.print("Temperatura = ");
   Serial.print(t);
@@ -64,10 +67,12 @@ void loop() {
   Serial.print(h);
   Serial.println(" %");
   Serial.println("-----------------------");
-  //Radio
+
+  //2. Formatear mensaje (formato compacto para radio)
+  String mensaje = "T:" + String(t, 1) + " H:" + String(h, 0) + " P:" + String(p, 0) + " A:" + String(a, 0);
+  // 3. Enviar por LoRa
   Serial.println(F("[LoRa] Enviando paquete... "));
-  //Enviar mensaje
-  int state = radio.transmit("Hola desde Heltec V3!");
+  int state = radio.transmit(mensaje);
   if (state == RADIOLIB_ERR_NONE) {
     Serial.println(F("¡Enviado correctamente!"));
   } else {
@@ -75,14 +80,8 @@ void loop() {
     Serial.println(state);
   }
   delay(250);
-  //Enviar mensaje por radio
-  //2. Formatear mensaje (formato compacto para radio)
-   String mensaje = "T:" + String(t, 1) + " H:" + String(h, 0) + " P:" + String(p, 0) + " A:" String(a, 0);
-  // 3. Enviar por LoRa
-  // LoRa.beginPacket();
-  //LoRa.print(mensaje);
-  //LoRa.endPacket();
-  //while (millis() - tiempoAnterior <= t_ciclo) {
-  // delay(1);
+  while (millis() - tiempoAnterior <= t_ciclo) {
+    delay(1);
+  }
+  tiempoAnterior = millis();
 }
-//tiempoAnterior = millis();
