@@ -36,7 +36,7 @@ SoftwareSerial lora_serial(RX_LORA, TX_LORA);
 LoRa_E32 e32(&lora_serial, AUX, M0, M1);
 
 // Canal de radio
-#define RADIO_CHAN 0x08
+#define RADIO_CHAN 0x06
 
 // Tiempo de escucha del GPS (ms)
 #define T_GPS 1000
@@ -52,6 +52,14 @@ void configurarLora() {
   Configuration configuration = *(Configuration*)rsc.data;
 
   configuration.CHAN = RADIO_CHAN;
+
+  // Forzamos parámetros compatibles con Heltec
+  configuration.SPED.airDataRate = AIR_DATA_RATE_010_24;  // 2.4 kbps
+  configuration.SPED.uartBaudRate = UART_BPS_9600;
+  configuration.SPED.uartParity = MODE_00_8N1;
+
+  configuration.OPTION.transmissionPower = POWER_20;
+  configuration.OPTION.fixedTransmission = FT_TRANSPARENT_TRANSMISSION;
 
   e32.setConfiguration(configuration, WRITE_CFG_PWR_DWN_SAVE);
   rsc.close();
@@ -113,10 +121,10 @@ void enviarPorRadio() {
   // --- 2. Conversión de datos GPS a texto ---
   // Se reducen etiquetas y decimales para no superar los 58 bytes del E32
   String sats = String(gps.satellites.value());
-  String lat  = String(gps.location.lat(), 4);
-  String lon  = String(gps.location.lng(), 4);
-  String alt  = String(gps.altitude.meters(), 1);
-  String vel  = String(gps.speed.kmph(), 1);
+  String lat = String(gps.location.lat(), 4);
+  String lon = String(gps.location.lng(), 4);
+  String alt = String(gps.altitude.meters(), 1);
+  String vel = String(gps.speed.kmph(), 1);
 
   // --- 3. Inicializamos los 19 campos vacíos ---
   // campo 1  -> campos[0]
