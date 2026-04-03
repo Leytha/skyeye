@@ -23,6 +23,7 @@
 #define RX_GPS 3
 #define TX_GPS 2
 
+#define LED_GPS 13
 // --- Objetos y Configuración ---
 TinyGPSPlus gps;
 
@@ -187,6 +188,7 @@ void enviarPorRadio() {
 void setup() {
   Serial.begin(9600);
   gps_serial.begin(9600);
+  pinMode(LED_GPS, OUTPUT);
 
   configurarLora();
 
@@ -195,11 +197,13 @@ void setup() {
 
 void loop() {
 
-  if (obtenerDatosGPS()) {
-    enviarPorRadio();
-  } else {
-    Serial.println(F("Buscando Fix GPS..."));
-  }
+if (obtenerDatosGPS()) {
+  digitalWrite(LED_GPS, HIGH);
+  enviarPorRadio();
+} else {
+  digitalWrite(LED_GPS, LOW); 
+  Serial.println(F("Buscando Fix GPS..."));
+}
 
   /*
   gps_serial.listen();
