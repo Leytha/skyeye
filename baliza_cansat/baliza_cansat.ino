@@ -1,5 +1,6 @@
 #include "Arduino.h"
-#include "LoRa_E32.h"
+#include <SPI.h>
+#include <LoRa.h>
 #include <SoftwareSerial.h>
 #include <TinyGPS++.h>
 
@@ -12,63 +13,44 @@
 
 // --- Pines de Conexión ---
 
-// LoRa (módulo E32)
-#define RX_LORA 4
-#define TX_LORA 5
-#define AUX 6
-#define M0 7
-#define M1 8
+// LoRa (módulo SX1276)
+#define NSS_LORA 10
+#define RST_LORA 8
+#define DIO0_LORA 2
 
 // GPS (NEO-6M)
 #define RX_GPS 4
 #define TX_GPS 3
 
-#define LED_GPS 13
+// Frecuencia LoRa
+#define BAND 868E6
+
+// Tiempo de escucha del GPS (ms)
+#define T_GPS 1000
+
 // --- Objetos y Configuración ---
 TinyGPSPlus gps;
 
 // Puerto serie para GPS
 SoftwareSerial gps_serial(RX_GPS, TX_GPS);
 
-// Puerto serie para LoRa
-SoftwareSerial lora_serial(RX_LORA, TX_LORA);
-
-// Instancia del módulo LoRa E32
-LoRa_E32 e32(&lora_serial, AUX, M0, M1);
-
-// Canal de radio
-#define RADIO_CHAN 0x06
-
-// Tiempo de escucha del GPS (ms)
-#define T_GPS 1000
-
 
 // --- FUNCIONES DE APOYO ---
 
 // Configura el módulo LoRa
 void configurarLora() {
-  e32.begin();
+  LoRa.setPins(NSS_LORA, RST_LORA, DIO0_LORA);
 
-  ResponseStructContainer rsc = e32.getConfiguration();
-  Configuration configuration = *(Configuration*)rsc.data;
+  if (!LoRa.begin(BAND)) {
+    Serial.println(F("Error al iniciar LoRa."));
+    while (1);
+  }
 
-  configuration.CHAN = RADIO_CHAN;
-
-  // Forzamos parámetros compatibles con Heltec
-  configuration.SPED.airDataRate = AIR_DATA_RATE_010_24;  // 2.4 kbps
-  configuration.SPED.uartBaudRate = UART_BPS_9600;
-  configuration.SPED.uartParity = MODE_00_8N1;
-
-  configuration.OPTION.transmissionPower = POWER_20;
-  configuration.OPTION.fixedTransmission = FT_TRANSPARENT_TRANSMISSION;
-
-  e32.setConfiguration(configuration, WRITE_CFG_PWR_DWN_SAVE);
-  rsc.close();
-
-  pinMode(M0, OUTPUT);
-  pinMode(M1, OUTPUT);
-  digitalWrite(M0, LOW);
-  digitalWrite(M1, LOW);
+  // Parámetros LoRa compatibles con la Heltec
+  LoRa.setSpreadingFactor(11);
+  LoRa.setSignalBandwidth(125E3);
+  LoRa.setCodingRate4(5);
+  LoRa.setSyncWord(0x12);
 
   Serial.println(F("LoRa configurado."));
 }
@@ -120,16 +102,13 @@ void enviarPorRadio() {
           gps.time.second());
 
   // --- 2. Conversión de datos GPS a texto ---
-  // Se reducen etiquetas y decimales para no superar los 58 bytes del E32
   String sats = String(gps.satellites.value());
-  String lat = String(gps.location.lat(), 4);
-  String lon = String(gps.location.lng(), 4);
-  String alt = String(gps.altitude.meters(), 1);
-  String vel = String(gps.speed.kmph(), 1);
+  String lat  = String(gps.location.lat(), 4);
+  String lon  = String(gps.location.lng(), 4);
+  String alt  = String(gps.altitude.meters(), 1);
+  String vel  = String(gps.speed.kmph(), 1);
 
   // --- 3. Inicializamos los 19 campos vacíos ---
-  // campo 1  -> campos[0]
-  // campo 19 -> campos[18]
   String campos[19];
 
   for (int i = 0; i < 19; i++) {
@@ -153,13 +132,13 @@ void enviarPorRadio() {
   // --- 5. Rellenamos solo el bloque correspondiente a esta baliza ---
   // Formato compacto:
   // id,hora,sats,lat,lon,alt,vel
-  campos[inicioBloque + 0] = String(ID_BALIZA);  // ID de baliza
-  campos[inicioBloque + 1] = String(hora);       // HH:MM:SS
-  campos[inicioBloque + 2] = sats;               // Satélites
-  campos[inicioBloque + 3] = lat;                // Latitud
-  campos[inicioBloque + 4] = lon;                // Longitud
-  campos[inicioBloque + 5] = alt;                // Altura
-  campos[inicioBloque + 6] = vel;                // Velocidad
+  campos[inicioBloque + 0] = String(ID_BALIZA);
+  campos[inicioBloque + 1] = String(hora);
+  campos[inicioBloque + 2] = sats;
+  campos[inicioBloque + 3] = lat;
+  campos[inicioBloque + 4] = lon;
+  campos[inicioBloque + 5] = alt;
+  campos[inicioBloque + 6] = vel;
 
   // --- 6. Construimos el mensaje final ---
   String mensaje = construirMensajeDesdeCampos(campos, 19);
@@ -168,16 +147,11 @@ void enviarPorRadio() {
   Serial.println(F("Enviando mensaje:"));
   Serial.println(mensaje);
 
-  lora_serial.listen();
-  delay(50);
+  LoRa.beginPacket();
+  LoRa.print(mensaje);
+  LoRa.endPacket();
 
-  ResponseStatus rs = e32.sendMessage(mensaje);
-
-  if (rs.code != 1) {
-    Serial.println(rs.getResponseDescription());
-  } else {
-    Serial.println(F("OK!"));
-  }
+  Serial.println(F("OK!"));
 
   delay(100);
 }
@@ -188,7 +162,6 @@ void enviarPorRadio() {
 void setup() {
   Serial.begin(9600);
   gps_serial.begin(9600);
-  pinMode(LED_GPS, OUTPUT);
 
   configurarLora();
 
@@ -197,13 +170,12 @@ void setup() {
 
 void loop() {
 
-if (obtenerDatosGPS()) {
-  digitalWrite(LED_GPS, HIGH);
-  enviarPorRadio();
-} else {
-  digitalWrite(LED_GPS, LOW); 
-  Serial.println(F("Buscando Fix GPS..."));
-}
+  // Solo se envía si el GPS tiene posición válida
+  if (obtenerDatosGPS()) {
+    enviarPorRadio();
+  } else {
+    Serial.println(F("Buscando Fix GPS..."));
+  }
 
   /*
   gps_serial.listen();
