@@ -17,6 +17,9 @@
 #define NSS_LORA 10
 #define RST_LORA 8
 #define DIO0_LORA 2
+#define PIN_MOSI 11
+#define PIN_MISO 12
+#define PIN_SCK 13
 
 // GPS (NEO-6M)
 #define RX_GPS 4
@@ -43,16 +46,15 @@ void configurarLora() {
 
   if (!LoRa.begin(BAND)) {
     Serial.println(F("Error al iniciar LoRa."));
-    while (1);
+  } 
+  else {
+    // Parámetros LoRa compatibles con la Heltec
+    LoRa.setSpreadingFactor(11);
+    LoRa.setSignalBandwidth(125E3);
+    LoRa.setCodingRate4(5);
+    LoRa.setSyncWord(0x12);
+    Serial.println(F("LoRa configurado."));
   }
-
-  // Parámetros LoRa compatibles con la Heltec
-  LoRa.setSpreadingFactor(11);
-  LoRa.setSignalBandwidth(125E3);
-  LoRa.setCodingRate4(5);
-  LoRa.setSyncWord(0x12);
-
-  Serial.println(F("LoRa configurado."));
 }
 
 
@@ -73,7 +75,6 @@ bool obtenerDatosGPS() {
       }
     }
   }
-
   return nuevoDato;
 }
 
@@ -103,10 +104,10 @@ void enviarPorRadio() {
 
   // --- 2. Conversión de datos GPS a texto ---
   String sats = String(gps.satellites.value());
-  String lat  = String(gps.location.lat(), 4);
-  String lon  = String(gps.location.lng(), 4);
-  String alt  = String(gps.altitude.meters(), 1);
-  String vel  = String(gps.speed.kmph(), 1);
+  String lat = String(gps.location.lat(), 4);
+  String lon = String(gps.location.lng(), 4);
+  String alt = String(gps.altitude.meters(), 1);
+  String vel = String(gps.speed.kmph(), 1);
 
   // --- 3. Inicializamos los 19 campos vacíos ---
   String campos[19];
@@ -160,7 +161,7 @@ void enviarPorRadio() {
 // --- BLOQUES PRINCIPALES ---
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   gps_serial.begin(9600);
 
   configurarLora();
