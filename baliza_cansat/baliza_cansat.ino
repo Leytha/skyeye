@@ -20,8 +20,8 @@
 #define M1 8
 
 // GPS (NEO-6M)
-#define RX_GPS 3
-#define TX_GPS 2
+#define RX_GPS 4
+#define TX_GPS 3
 
 #define LED_GPS 13
 // --- Objetos y Configuración ---
