@@ -217,7 +217,7 @@ void loop() {
     mensaje += String(t, 1) + ",";
     mensaje += String(p, 0) + ",";
     mensaje += String(h, 0) + ",";
-    mensaje += String(alturaRelativa, 0) + ",";
+    mensaje += String(a, 0) + ",";
 
     mensaje += id1 + ",";
     mensaje += hora1 + ",";
