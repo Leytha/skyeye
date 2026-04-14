@@ -1,55 +1,162 @@
-#include "Arduino.h"
-#include "LoRa_E32.h"
+#include <Arduino.h>
+#include <SPI.h>
+#include <LoRa.h>
 #include <SoftwareSerial.h>
+#include <TinyGPS++.h>
 
-// Configuración de pines para Arduino Uno
-SoftwareSerial mySerial(2, 3);    // RX (al TX del E32), TX (al RX del E32)
-LoRa_E32 e32(&mySerial, 4, 5, 6); // AUX, M0, M1
+// --- CONFIGURACIÓN GENERAL ---
 
-//Configuración de canal - Ejemplo: Para obtener 870 MHz -> 870 - 862 = 8. Ponemos canal 8.
-#define RADIO_CHAN 0x08    
+// Cambiar solo este valor:
+// 1 -> baliza 1
+// 2 -> baliza 2
+#define ID_BALIZA 1
+
+// --- Pines de Conexión ---
+
+// LoRa (SX1276) en NodeMCU
+#define NSS_LORA  D8
+#define RST_LORA  D0
+#define DIO0_LORA D2
+
+// GPS (NEO-6M)
+#define RX_GPS D1
+#define TX_GPS D3
+
+// Frecuencia LoRa
+#define BAND 868E6
+
+// Tiempo de escucha del GPS (ms)
+#define T_GPS 1000
+
+// --- Objetos y Configuración ---
+TinyGPSPlus gps;
+
+// Puerto serie para GPS
+SoftwareSerial gps_serial(RX_GPS, TX_GPS);
+
+// --- FUNCIONES DE APOYO ---
+
+// Configura el módulo LoRa
+void configurarLora() {
+  LoRa.setPins(NSS_LORA, RST_LORA, DIO0_LORA);
+
+  if (!LoRa.begin(BAND)) {
+    Serial.println("Error al iniciar LoRa.");
+  } 
+  else {
+    LoRa.setSpreadingFactor(11);
+    LoRa.setSignalBandwidth(125E3);
+    LoRa.setCodingRate4(5);
+    LoRa.setSyncWord(0x12);
+    Serial.println("LoRa configurado.");
+  }
+}
+
+// Escucha el GPS y procesa las tramas NMEA
+bool obtenerDatosGPS() {
+  unsigned long start = millis();
+  bool nuevoDato = false;
+
+  while (millis() - start < T_GPS) {
+    while (gps_serial.available()) {
+      if (gps.encode(gps_serial.read())) {
+        if (gps.location.isValid()) {
+          nuevoDato = true;
+        }
+      }
+    }
+  }
+  return nuevoDato;
+}
+
+// Une los campos con comas
+String construirMensajeDesdeCampos(String campos[], int numCampos) {
+  String mensaje = "";
+
+  for (int i = 0; i < numCampos; i++) {
+    mensaje += campos[i];
+    mensaje += ",";
+  }
+
+  return mensaje;
+}
+
+// Construye y envía el mensaje
+void enviarPorRadio() {
+
+  char hora[9];
+  sprintf(hora, "%02d:%02d:%02d",
+          gps.time.hour(),
+          gps.time.minute(),
+          gps.time.second());
+
+  String sats = String(gps.satellites.value());
+  String lat = String(gps.location.lat(), 4);
+  String lon = String(gps.location.lng(), 4);
+  String alt = String(gps.altitude.meters(), 1);
+  String vel = String(gps.speed.kmph(), 1);
+
+  String campos[19];
+
+  for (int i = 0; i < 19; i++) {
+    campos[i] = "";
+  }
+
+  int inicioBloque = -1;
+
+  if (ID_BALIZA == 1) {
+    inicioBloque = 5;
+  } else if (ID_BALIZA == 2) {
+    inicioBloque = 12;
+  } else {
+    Serial.println("Error: ID_BALIZA debe ser 1 o 2.");
+    return;
+  }
+
+  campos[inicioBloque + 0] = String(ID_BALIZA);
+  campos[inicioBloque + 1] = String(hora);
+  campos[inicioBloque + 2] = sats;
+  campos[inicioBloque + 3] = lat;
+  campos[inicioBloque + 4] = lon;
+  campos[inicioBloque + 5] = alt;
+  campos[inicioBloque + 6] = vel;
+
+  String mensaje = construirMensajeDesdeCampos(campos, 19);
+
+  Serial.println("Enviando mensaje:");
+  Serial.println(mensaje);
+
+  LoRa.beginPacket();
+  LoRa.print(mensaje);
+  LoRa.endPacket();
+
+  Serial.println("OK!");
+
+  delay(100);
+}
+
+// --- BLOQUES PRINCIPALES ---
 
 void setup() {
-  Serial.begin(9600);
-  while (!Serial);
-  Serial.println("Configurando emisor LoRa E32...");
+  Serial.begin(115200);
+  gps_serial.begin(9600);
 
-  // Inicializa el módulo
-  e32.begin();
-  
-  // Cambiar la configuración actual del módulo
-  ResponseStructContainer rsc = e32.getConfiguration();
-  Configuration configuration = *(Configuration*)rsc.data;
-  configuration.CHAN = RADIO_CHAN; 
-  e32.setConfiguration(configuration, WRITE_CFG_PWR_DWN_SAVE);   // WRITE_CFG_PWR_DWN_SAVE: Se guarda aunque quites la batería.
-  rsc.close();
-  Serial.println("Configuración de frecuencia actualizada.");
+  // LED integrado
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); // apagado
 
-  // M0 y M1 en LOW para "Modo Normal" (Transmisión transparente)
-  pinMode(5, OUTPUT);
-  pinMode(6, OUTPUT);
-  digitalWrite(5, LOW);
-  digitalWrite(6, LOW);
+  configurarLora();
 
-  Serial.println("Listo para enviar.");
+  Serial.println("Sistema listo. Esperando señal de satélites...");
 }
 
 void loop() {
-  // El mensaje que quieres mandar
-  String mensaje = "Hola desde Arduino!";
 
-  Serial.print("Enviando: ");
-  Serial.println(mensaje);
-
-  // Comando para enviar el string
-  ResponseStatus rs = e32.sendMessage(mensaje);
-  
-  // Verificamos si salió bien
-  if (rs.code != 1) {
-    Serial.println("Error al enviar: " + rs.getResponseDescription());
+  if (obtenerDatosGPS()) {
+    digitalWrite(LED_BUILTIN, LOW);  // LED encendido → FIX
+    enviarPorRadio();
   } else {
-    Serial.println("¡Enviado con éxito!");
+    digitalWrite(LED_BUILTIN, HIGH); // LED apagado → sin FIX
+    Serial.println("Buscando Fix GPS...");
   }
-
-  delay(2000); // Espera 2 segundos para el siguiente envío
 }
