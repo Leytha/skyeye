@@ -4,14 +4,11 @@
 #include <SoftwareSerial.h>
 #include <TinyGPS++.h>
 
-// --- CONFIGURACIÓN GENERAL ---
+// ---------------- CONFIGURACIÓN GENERAL ----------------
 
-// Cambiar solo este valor:
-// 1 -> baliza 1
-// 2 -> baliza 2
-#define ID_BALIZA 1
+#define ID_BALIZA 1   // 1 o 2
 
-// --- Pines de Conexión ---
+// ---------------- PINES ----------------
 
 // LoRa (SX1276) en NodeMCU
 #define NSS_LORA  D8
@@ -22,67 +19,75 @@
 #define RX_GPS D1
 #define TX_GPS D3
 
-// Frecuencia LoRa
-#define BAND 868E6
+// Frecuencia LoRa: 868.5 MHz
+#define BAND 868.5E6
 
 // Tiempo de escucha del GPS (ms)
 #define T_GPS 1000
 
-// --- Objetos y Configuración ---
-TinyGPSPlus gps;
+// ---------------- OBJETOS ----------------
 
-// Puerto serie para GPS
+TinyGPSPlus gps;
 SoftwareSerial gps_serial(RX_GPS, TX_GPS);
 
-// --- FUNCIONES DE APOYO ---
+bool loraInicializada = false;
 
-// Configura el módulo LoRa
+// ---------------- FUNCIONES ----------------
+
 void configurarLora() {
   LoRa.setPins(NSS_LORA, RST_LORA, DIO0_LORA);
 
   if (!LoRa.begin(BAND)) {
     Serial.println("Error al iniciar LoRa.");
-  } 
-  else {
-    LoRa.setSpreadingFactor(11);
-    LoRa.setSignalBandwidth(125E3);
-    LoRa.setCodingRate4(5);
-    LoRa.setSyncWord(0x12);
-    Serial.println("LoRa configurado.");
+    loraInicializada = false;
+    return;
   }
+
+  LoRa.setSpreadingFactor(11);
+  LoRa.setSignalBandwidth(125E3);
+  LoRa.setCodingRate4(5);
+  LoRa.setSyncWord(0x12);
+
+  loraInicializada = true;
+  Serial.println("LoRa configurado.");
 }
 
-// Escucha el GPS y procesa las tramas NMEA
 bool obtenerDatosGPS() {
   unsigned long start = millis();
   bool nuevoDato = false;
 
   while (millis() - start < T_GPS) {
     while (gps_serial.available()) {
-      if (gps.encode(gps_serial.read())) {
+      char c = gps_serial.read();
+      if (gps.encode(c)) {
         if (gps.location.isValid()) {
           nuevoDato = true;
         }
       }
     }
   }
+
   return nuevoDato;
 }
 
-// Une los campos con comas
 String construirMensajeDesdeCampos(String campos[], int numCampos) {
   String mensaje = "";
 
   for (int i = 0; i < numCampos; i++) {
     mensaje += campos[i];
-    mensaje += ",";
+    if (i < numCampos - 1) {
+      mensaje += ",";
+    }
   }
 
   return mensaje;
 }
 
-// Construye y envía el mensaje
-void enviarPorRadio() {
+bool enviarPorRadio() {
+  if (!loraInicializada) {
+    Serial.println("Error: LoRa no está inicializado.");
+    return false;
+  }
 
   char hora[9];
   sprintf(hora, "%02d:%02d:%02d",
@@ -91,13 +96,12 @@ void enviarPorRadio() {
           gps.time.second());
 
   String sats = String(gps.satellites.value());
-  String lat = String(gps.location.lat(), 4);
-  String lon = String(gps.location.lng(), 4);
-  String alt = String(gps.altitude.meters(), 1);
-  String vel = String(gps.speed.kmph(), 1);
+  String lat  = String(gps.location.lat(), 4);
+  String lon  = String(gps.location.lng(), 4);
+  String alt  = String(gps.altitude.meters(), 1);
+  String vel  = String(gps.speed.kmph(), 1);
 
   String campos[19];
-
   for (int i = 0; i < 19; i++) {
     campos[i] = "";
   }
@@ -110,7 +114,7 @@ void enviarPorRadio() {
     inicioBloque = 12;
   } else {
     Serial.println("Error: ID_BALIZA debe ser 1 o 2.");
-    return;
+    return false;
   }
 
   campos[inicioBloque + 0] = String(ID_BALIZA);
@@ -126,37 +130,52 @@ void enviarPorRadio() {
   Serial.println("Enviando mensaje:");
   Serial.println(mensaje);
 
-  LoRa.beginPacket();
+  int okBegin = LoRa.beginPacket();
+  if (okBegin == 0) {
+    Serial.println("Error: no se pudo iniciar el paquete LoRa.");
+    return false;
+  }
+
   LoRa.print(mensaje);
-  LoRa.endPacket();
 
-  Serial.println("OK!");
+  int okEnd = LoRa.endPacket();
+  if (okEnd != 1) {
+    Serial.println("Error: el paquete no se envió correctamente.");
+    return false;
+  }
 
-  delay(100);
+  Serial.println("OK");
+  return true;
 }
 
-// --- BLOQUES PRINCIPALES ---
+// ---------------- SETUP ----------------
 
 void setup() {
   Serial.begin(115200);
   gps_serial.begin(9600);
 
-  // LED integrado
   pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH); // apagado
+  digitalWrite(LED_BUILTIN, HIGH); // LED apagado
 
   configurarLora();
 
   Serial.println("Sistema listo. Esperando señal de satélites...");
 }
 
-void loop() {
+// ---------------- LOOP ----------------
 
+void loop() {
   if (obtenerDatosGPS()) {
-    digitalWrite(LED_BUILTIN, LOW);  // LED encendido → FIX
-    enviarPorRadio();
+    digitalWrite(LED_BUILTIN, LOW);  // LED encendido = fix
+
+    if (!enviarPorRadio()) {
+      Serial.println("Fallo en el envío.");
+    }
+
   } else {
-    digitalWrite(LED_BUILTIN, HIGH); // LED apagado → sin FIX
+    digitalWrite(LED_BUILTIN, HIGH); // LED apagado = sin fix
     Serial.println("Buscando Fix GPS...");
   }
+
+  delay(500);
 }
