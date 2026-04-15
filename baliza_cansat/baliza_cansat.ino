@@ -3,179 +3,145 @@
 #include <LoRa.h>
 #include <SoftwareSerial.h>
 #include <TinyGPS++.h>
-
-// ---------------- CONFIGURACIÓN GENERAL ----------------
-
-#define ID_BALIZA 1   // 1 o 2
-
-// ---------------- PINES ----------------
-
-// LoRa (SX1276) en NodeMCU
-#define NSS_LORA  D8
-#define RST_LORA  D0
+// CONFIGURACIÓN
+#define ID_BALIZA 1
+#define BAND 868500000
+#define TIEMPO_LECTURA_GPS 3000
+// PINES LORA
+#define NSS_LORA D8
+#define RST_LORA D0
 #define DIO0_LORA D2
-
-// GPS (NEO-6M)
+// PINES GPS
 #define RX_GPS D1
 #define TX_GPS D3
-
-// Frecuencia LoRa: 868.5 MHz
-#define BAND 868.5E6
-
-// Tiempo de escucha del GPS (ms)
-#define T_GPS 1000
-
-// ---------------- OBJETOS ----------------
-
+// OBJETOS
 TinyGPSPlus gps;
-SoftwareSerial gps_serial(RX_GPS, TX_GPS);
-
+SoftwareSerial gpsSerial(RX_GPS, TX_GPS);
+// VARIABLES DE ESTADO
 bool loraInicializada = false;
-
-// ---------------- FUNCIONES ----------------
-
-void configurarLora() {
-  LoRa.setPins(NSS_LORA, RST_LORA, DIO0_LORA);
-
-  if (!LoRa.begin(BAND)) {
-    Serial.println("Error al iniciar LoRa.");
-    loraInicializada = false;
-    return;
-  }
-
-  LoRa.setSpreadingFactor(11);
-  LoRa.setSignalBandwidth(125E3);
-  LoRa.setCodingRate4(5);
-  LoRa.setSyncWord(0x12);
-
-  loraInicializada = true;
-  Serial.println("LoRa configurado.");
-}
-
-bool obtenerDatosGPS() {
-  unsigned long start = millis();
-  bool nuevoDato = false;
-
-  while (millis() - start < T_GPS) {
-    while (gps_serial.available()) {
-      char c = gps_serial.read();
-      if (gps.encode(c)) {
-        if (gps.location.isValid()) {
-          nuevoDato = true;
-        }
-      }
-    }
-  }
-
-  return nuevoDato;
-}
-
-String construirMensajeDesdeCampos(String campos[], int numCampos) {
-  String mensaje = "";
-
-  for (int i = 0; i < numCampos; i++) {
-    mensaje += campos[i];
-    if (i < numCampos - 1) {
-      mensaje += ",";
-    }
-  }
-
-  return mensaje;
-}
-
-bool enviarPorRadio() {
-  if (!loraInicializada) {
-    Serial.println("Error: LoRa no está inicializado.");
-    return false;
-  }
-
-  char hora[9];
-  sprintf(hora, "%02d:%02d:%02d",
-          gps.time.hour(),
-          gps.time.minute(),
-          gps.time.second());
-
-  String sats = String(gps.satellites.value());
-  String lat  = String(gps.location.lat(), 4);
-  String lon  = String(gps.location.lng(), 4);
-  String alt  = String(gps.altitude.meters(), 1);
-  String vel  = String(gps.speed.kmph(), 1);
-
+bool gpsConectado = false;
+bool gpsConFix = false;
+// FUNCIÓN PARA CREAR EL MENSAJE
+String crearMensaje() {
   String campos[19];
   for (int i = 0; i < 19; i++) {
     campos[i] = "";
   }
-
-  int inicioBloque = -1;
-
+  int inicioBloque;
   if (ID_BALIZA == 1) {
     inicioBloque = 5;
-  } else if (ID_BALIZA == 2) {
+  }
+  else {
     inicioBloque = 12;
-  } else {
-    Serial.println("Error: ID_BALIZA debe ser 1 o 2.");
-    return false;
   }
-
+  String hora;
+  if (gps.time.isValid()) {
+    char textoHora[9];
+    sprintf(textoHora, "%02d:%02d:%02d", gps.time.hour(), gps.time.minute(), gps.time.second());
+    hora = String(textoHora);
+  }
+  else {
+    hora = "SIN_HORA";
+  }
+  String satelites;
+  if (gps.satellites.isValid()) {
+    satelites = String(gps.satellites.value());
+  }
+  else {
+    satelites = "0";
+  }
+  String latitud;
+  String longitud;
+  String altitud;
+  String velocidad;
+  if (gpsConFix) {
+    latitud = String(gps.location.lat(), 4);
+    longitud = String(gps.location.lng(), 4);
+    altitud = String(gps.altitude.meters(), 1);
+    velocidad = String(gps.speed.kmph(), 1);
+  }
+  else {
+    latitud = "SIN_FIX";
+    longitud = "SIN_FIX";
+    altitud = "SIN_FIX";
+    velocidad = "SIN_FIX";
+  }
   campos[inicioBloque + 0] = String(ID_BALIZA);
-  campos[inicioBloque + 1] = String(hora);
-  campos[inicioBloque + 2] = sats;
-  campos[inicioBloque + 3] = lat;
-  campos[inicioBloque + 4] = lon;
-  campos[inicioBloque + 5] = alt;
-  campos[inicioBloque + 6] = vel;
-
-  String mensaje = construirMensajeDesdeCampos(campos, 19);
-
-  Serial.println("Enviando mensaje:");
-  Serial.println(mensaje);
-
-  int okBegin = LoRa.beginPacket();
-  if (okBegin == 0) {
-    Serial.println("Error: no se pudo iniciar el paquete LoRa.");
-    return false;
+  campos[inicioBloque + 1] = hora;
+  campos[inicioBloque + 2] = satelites;
+  campos[inicioBloque + 3] = latitud;
+  campos[inicioBloque + 4] = longitud;
+  campos[inicioBloque + 5] = altitud;
+  campos[inicioBloque + 6] = velocidad;
+  String mensaje = "";
+  for (int i = 0; i < 19; i++) {
+    mensaje += campos[i];
+    if (i < 18) {
+      mensaje += ",";
+    }
   }
-
-  LoRa.print(mensaje);
-
-  int okEnd = LoRa.endPacket();
-  if (okEnd != 1) {
-    Serial.println("Error: el paquete no se envió correctamente.");
-    return false;
-  }
-
-  Serial.println("OK");
-  return true;
+  return mensaje;
 }
-
-// ---------------- SETUP ----------------
 
 void setup() {
   Serial.begin(115200);
-  gps_serial.begin(9600);
-
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH); // LED apagado
-
-  configurarLora();
-
-  Serial.println("Sistema listo. Esperando señal de satélites...");
+  gpsSerial.begin(9600);
+  delay(1000);
+  LoRa.setPins(NSS_LORA, RST_LORA, DIO0_LORA);
+  if (!LoRa.begin(BAND)) {
+    Serial.println("ERROR: LoRa no se inicializó.");
+    loraInicializada = false;
+    return;
+  }
+  else {
+    LoRa.setSpreadingFactor(11);
+    LoRa.setSignalBandwidth(125E3);
+    LoRa.setCodingRate4(5);
+    LoRa.setSyncWord(0x12);
+    LoRa.enableCrc();
+    loraInicializada = true;
+    Serial.println("LoRa configurado correctamente.");
+  }
 }
 
-// ---------------- LOOP ----------------
-
 void loop() {
-  if (obtenerDatosGPS()) {
-    digitalWrite(LED_BUILTIN, LOW);  // LED encendido = fix
-
-    if (!enviarPorRadio()) {
-      Serial.println("Fallo en el envío.");
-    }
-
-  } else {
-    digitalWrite(LED_BUILTIN, HIGH); // LED apagado = sin fix
-    Serial.println("Buscando Fix GPS...");
+  if (!loraInicializada) {
+    Serial.println("LoRa sigue sin inicializarse.");
+    delay(TIEMPO_LECTURA_GPS);
+    return;
   }
-
-  delay(500);
+  gpsConectado = false;
+  gpsConFix = false;
+  unsigned long inicio = millis();
+  while (millis() - inicio < TIEMPO_LECTURA_GPS) {
+    while (gpsSerial.available()) {
+      char c = gpsSerial.read();
+      gpsConectado = true;
+      gps.encode(c);
+    }
+  }
+  if (gps.location.isValid()) {
+    gpsConFix = true;
+  }
+  if (!gpsConectado) {
+    Serial.println("GPS sin conexión.");
+  }
+  else {
+    String mensaje = crearMensaje();
+    Serial.println("Mensaje:");
+    Serial.println(mensaje);
+    if (LoRa.beginPacket() == 0) {
+      Serial.println("ERROR: beginPacket() falló.");
+    }
+    else {
+      LoRa.print(mensaje);
+      if (LoRa.endPacket() == 1) {
+        Serial.println("Enviado OK");
+      }
+      else {
+        Serial.println("ERROR: endPacket() falló.");
+      }
+    }
+  }
+  Serial.println("--------------------");
 }
