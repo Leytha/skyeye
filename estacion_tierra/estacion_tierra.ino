@@ -64,14 +64,14 @@ void loop() {
   if (state == RADIOLIB_ERR_NONE) {
 
     String campos[19];
-
+    //Lista de campos
     for (int i = 0; i < 19; i++) {
       campos[i] = "";
     }
 
     int inicio = 0;
     int n = 0;
-
+    // Guarda campos
     for (int i = 0; i < recibido.length(); i++) {
       if (recibido.charAt(i) == ',') {
         if (n < 19) {
