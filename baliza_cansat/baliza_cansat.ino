@@ -4,7 +4,7 @@
 #include <SoftwareSerial.h>
 #include <TinyGPS++.h>
 // CONFIGURACIÓN
-#define ID_BALIZA 1
+#define ID_BALIZA 2
 #define BAND 868500000
 #define TIEMPO_LECTURA_GPS 3000
 // PINES LORA
@@ -94,7 +94,7 @@ void setup() {
     return;
   }
   else {
-    LoRa.setSpreadingFactor(11);
+    LoRa.setSpreadingFactor(8);
     LoRa.setSignalBandwidth(125E3);
     LoRa.setCodingRate4(5);
     LoRa.setSyncWord(0x12);

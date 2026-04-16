@@ -8,10 +8,10 @@
 
 #define PIN_SDA 41
 #define PIN_SCL 42
-#define BAND 868.0
+#define BAND 868.5
 #define SEALEVELPRESSURE_HPA 1013.25
 
-#define ALTURA_DESPEGUE 400
+#define ALTURA_DESPEGUE 300
 #define ALTURA_ATERRIZAJE 100
 #define ALTURA_CAMARA 600
 
@@ -61,7 +61,20 @@ bool estadoBuzzer = false;
 // altura
 float alturaInicial = 0.0;
 float alturaRelativa = 0.0;
-
+//
+void imprimirEstado() {
+  if (estado == 0) {
+    Serial.println("reposo");
+  } else if (estado == 1) {
+    Serial.println("despegue");
+  } else if (estado == 2) {
+    Serial.println("camara");
+  } else if (estado == 3) {
+    Serial.println("aterrizaje");
+  } else if (estado == 4) {
+    Serial.println("error");
+  }
+}
 // ---------------- SETUP ----------------
 
 void setup() {
@@ -89,6 +102,7 @@ void setup() {
   radio.setBandwidth(125.0);
   radio.setCodingRate(5);
   radio.setSyncWord(0x12);
+  radio.setCRC(true);
 
   alturaInicial = bme.readAltitude(SEALEVELPRESSURE_HPA);
 
@@ -121,11 +135,6 @@ void loop() {
   if (alturaRelativa > ALTURA_DESPEGUE && !haDespegado) {
     haDespegado = true;
     estado = 1;
-
-    // pitido corto
-    digitalWrite(PIN_BUZZER, HIGH);
-    delay(300);
-    digitalWrite(PIN_BUZZER, LOW);
   }
 
   // -------- 3. CÁMARA --------
@@ -159,17 +168,15 @@ void loop() {
   // -------- 6. RECEPCIÓN --------
 
   String recibido = "";
-  int state = radio.receive(recibido, 5);
+  int state = radio.receive(recibido, 5000);
 
+  
   if (state == RADIOLIB_ERR_NONE) {
     String campos[19];
-
-    for (int i = 0; i < 19; i++) campos[i] = "";
-
+    for (int i = 0; i < 19; i++) campos[i] = ""; //Vacía campos
     int inicio = 0;
     int n = 0;
-
-    for (int i = 0; i < recibido.length(); i++) {
+    for (int i = 0; i < recibido.length(); i++) { //Separa el mensaje en campos separados por comas
       if (recibido.charAt(i) == ',') {
         if (n < 19) {
           campos[n] = recibido.substring(inicio, i);
@@ -179,12 +186,11 @@ void loop() {
         }
       }
     }
-
-    if (n < 19 && inicio < recibido.length()) {
+    if (n < 19 && inicio < recibido.length()) { //Extrae el último campo si lo hubiera
       campos[n] = recibido.substring(inicio);
       campos[n].trim();
     }
-
+    //Rellena las variables globales con los campos
     if (campos[5] != "") id1 = campos[5];
     if (campos[6] != "") hora1 = campos[6];
     if (campos[7] != "") sat1 = campos[7];
@@ -205,6 +211,19 @@ void loop() {
     estado = 4;
   }
 
+
+/*
+  if (state == RADIOLIB_ERR_NONE) {
+    Serial.print("Recibido: ");
+    Serial.println(recibido);
+  } else if (state == RADIOLIB_ERR_RX_TIMEOUT) {
+    Serial.println("Timeout RX");
+  } else {
+    Serial.print("Error RX: ");
+    Serial.println(state);
+    estado = 4;
+  }
+  */
   // -------- 7. ENVÍO --------
 
   unsigned long ahoraEnvio = millis();
@@ -242,5 +261,6 @@ void loop() {
     if (estadoEnvio != RADIOLIB_ERR_NONE) {
       estado = 4;
     }
+    //Serial.println(mensaje);
   }
 }
